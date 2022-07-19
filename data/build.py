@@ -17,9 +17,9 @@ from timm.data import Mixup
 from PIL import Image
 # from timm.data import create_transform
 
-from .cached_image_folder import CachedImageFolder
-from .imagenet22k_dataset import IN22KDATASET
-from .samplers import SubsetRandomSampler
+# from cached_image_folder import CachedImageFolder
+from imagenet22k_dataset import IN22KDATASET
+from samplers import SubsetRandomSampler
 
 # Image statistics
 RGB_statistics = {
@@ -62,12 +62,14 @@ def build_loader(config):
     config.defrost()
     dataset_train, config.MODEL.NUM_CLASSES = build_dataset(is_train=True, config=config)
     config.freeze()
+
     print(f"local rank {config.LOCAL_RANK} / global rank {dist.get_rank()} successfully build train dataset")
     dataset_val, _ = build_dataset(is_train=False, config=config)
     print(f"local rank {config.LOCAL_RANK} / global rank {dist.get_rank()} successfully build val dataset")
 
     num_tasks = dist.get_world_size()
     global_rank = dist.get_rank()
+    
     if config.DATA.ZIP_MODE and config.DATA.CACHE_MODE == 'part':
         indices = np.arange(dist.get_rank(), len(dataset_train), dist.get_world_size())
         sampler_train = SubsetRandomSampler(indices)
@@ -101,15 +103,15 @@ def build_loader(config):
     )
 
     # setup mixup / cutmix
-    mixup_fn = None
-    mixup_active = config.AUG.MIXUP > 0 or config.AUG.CUTMIX > 0. or config.AUG.CUTMIX_MINMAX is not None
-    if mixup_active:
-        mixup_fn = Mixup(
-            mixup_alpha=config.AUG.MIXUP, cutmix_alpha=config.AUG.CUTMIX, cutmix_minmax=config.AUG.CUTMIX_MINMAX,
-            prob=config.AUG.MIXUP_PROB, switch_prob=config.AUG.MIXUP_SWITCH_PROB, mode=config.AUG.MIXUP_MODE,
-            label_smoothing=config.MODEL.LABEL_SMOOTHING, num_classes=config.MODEL.NUM_CLASSES)
+    # mixup_fn = None
+    # mixup_active = config.AUG.MIXUP > 0 or config.AUG.CUTMIX > 0. or config.AUG.CUTMIX_MINMAX is not None
+    # if mixup_active:
+    #     mixup_fn = Mixup(
+    #         mixup_alpha=config.AUG.MIXUP, cutmix_alpha=config.AUG.CUTMIX, cutmix_minmax=config.AUG.CUTMIX_MINMAX,
+    #         prob=config.AUG.MIXUP_PROB, switch_prob=config.AUG.MIXUP_SWITCH_PROB, mode=config.AUG.MIXUP_MODE,
+    #         label_smoothing=config.MODEL.LABEL_SMOOTHING, num_classes=config.MODEL.NUM_CLASSES)
 
-    return dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn
+    return dataset_train, dataset_val, data_loader_train, data_loader_val #, mixup_fn
 
 
 # Dataset
@@ -148,10 +150,10 @@ def build_dataset(is_train, config):
     root = os.path.join(config.DATA.DATA_PATH, prefix)
 
     txt_split = 'train' if is_train else 'val'
-    txt = './data/%s/%s_%s.txt'%(config.DATA.DATASET, config.DATA.DATASET, txt_split)
+    txt = './%s/%s_%s.txt'%(config.DATA.DATASET, config.DATA.DATASET, txt_split)
 
     dataset = LT_Dataset(root, txt, transform)
-    n_class = config.DATA.NUM_CLASSES
+    n_class = len(dataset)
     return dataset, n_class
     '''
     if config.DATA.DATASET == 'imagenet':
