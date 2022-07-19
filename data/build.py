@@ -5,19 +5,35 @@
 # Written by Ze Liu
 # --------------------------------------------------------
 
+from email.policy import default
 import os
 import torch
 import numpy as np
 import torch.distributed as dist
+from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.data import Mixup
-from timm.data import create_transform
+from PIL import Image
+# from timm.data import create_transform
 
 from .cached_image_folder import CachedImageFolder
 from .imagenet22k_dataset import IN22KDATASET
 from .samplers import SubsetRandomSampler
 
+# Image statistics
+RGB_statistics = {
+    'iNaturalist18': {
+        'mean': [0.466, 0.471, 0.380],
+        'std': [0.195, 0.194, 0.192]
+    },
+    'default': {
+        'mean': [0.485, 0.456, 0.406],
+        'std':[0.229, 0.224, 0.225]
+    }
+}
+
+'''
 try:
     from torchvision.transforms import InterpolationMode
 
@@ -39,6 +55,7 @@ try:
     timm_transforms._pil_interp = _pil_interp
 except:
     from timm.data.transforms import _pil_interp
+'''
 
 
 def build_loader(config):
@@ -95,8 +112,48 @@ def build_loader(config):
     return dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn
 
 
+# Dataset
+class LT_Dataset(Dataset):
+    
+    def __init__(self, root, txt, transform=None):
+        self.img_path = []
+        self.labels = []
+        self.transform = transform
+        with open(txt) as f:
+            for line in f:
+                self.img_path.append(os.path.join(root, line.split()[0]))
+                self.labels.append(int(line.split()[1]))
+        
+    def __len__(self):
+        return len(self.labels)
+        
+    def __getitem__(self, index):
+
+        path = self.img_path[index]
+        label = self.labels[index]
+        
+        with open(path, 'rb') as f:
+            sample = Image.open(f).convert('RGB')
+        
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample, label, index
+
+
 def build_dataset(is_train, config):
     transform = build_transform(is_train, config)
+    
+    prefix = 'train' if is_train else 'val'
+    root = os.path.join(config.DATA.DATA_PATH, prefix)
+
+    txt_split = 'train' if is_train else 'val'
+    txt = './data/%s/%s_%s.txt'%(config.DATA.DATASET, config.DATA.DATASET, txt_split)
+
+    dataset = LT_Dataset(root, txt, transform)
+    n_class = config.DATA.NUM_CLASSES
+    return dataset, n_class
+    '''
     if config.DATA.DATASET == 'imagenet':
         prefix = 'train' if is_train else 'val'
         if config.DATA.ZIP_MODE:
@@ -118,11 +175,29 @@ def build_dataset(is_train, config):
         n_class = 21841
     else:
         raise NotImplementedError("We only support ImageNet Now.")
+    '''
+    
+    
 
-    return dataset, n_class
 
-
-def build_transform(is_train, config):
+def build_transform(is_train, config=None, rgb_mean=RGB_statistics['default']['mean'], rgb_std=RGB_statistics['default']['std']):
+    if is_train:
+        # not iNaturalist18
+        return transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0),
+            transforms.ToTensor(),
+            transforms.Normalize(rgb_mean, rgb_std)
+        ])
+    else:
+        return transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(rgb_mean, rgb_std)
+        ])
+    '''
     resize_im = config.DATA.IMG_SIZE > 32
     if is_train:
         # this should always dispatch to transforms_imagenet_train
@@ -160,3 +235,4 @@ def build_transform(is_train, config):
     t.append(transforms.ToTensor())
     t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
     return transforms.Compose(t)
+    '''
